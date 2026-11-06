@@ -4,6 +4,8 @@
   <img src="public/images/icon.jpeg" alt="Squares in Squares Game Icon" width="300">
 </p>
 
+[Play here](https://rnascunha.github.io/squares-in-squares/)
+
 An interactive, client-side mathematical solver and visualizer designed to tackle the **Squares in Squares** geometric packing problem.
 
 **The Goal:** Pack _N_ unit squares (side length = 1) into the smallest possible larger square container without overlapping.
