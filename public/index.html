@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+      <!-- Primary Meta Tags -->
+      <title>Squares in Squares Solver</title>
+      <meta name="title" content="Squares in Squares Solver" />
+      <meta
+        name="description"
+        content="An interactive mathematical solver and game for the Kaggle Squares in Squares packing challenge."
+      />
+
+      <!-- Open Graph / Facebook -->
+      <meta property="og:type" content="website" />
+      <meta
+        property="og:url"
+        content="https://rnascunha.github.io/square-in-game/"
+      />
+      <meta property="og:title" content="Squares in Squares Solver" />
+      <meta
+        property="og:description"
+        content="An interactive mathematical solver and game for the Kaggle Squares in Squares packing challenge."
+      />
+      <meta property="og:image" content="images/icon.jpeg" />
+
+      <!-- Twitter -->
+      <meta property="twitter:card" content="summary_large_image" />
+      <meta
+        property="twitter:url"
+        content="https://rnascunha.github.io/square-in-game/"
+      />
+      <meta property="twitter:title" content="Squares in Squares Solver" />
+      <meta
+        property="twitter:description"
+        content="An interactive mathematical solver and game for the Kaggle Squares in Squares packing challenge."
+      />
+      <meta property="twitter:image" content="images/icon.jpeg" />
+
+      <link rel="stylesheet" href="styles.css" />
+    </head>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Left Pane: SVG Visualizer -->
+      <div class="svg-pane">
+        <svg id="canvas" viewBox="-1 -1 10 10">
+          <g id="squares-group"></g>
+          <rect
+            id="bounding-box"
+            fill="none"
+            stroke="blue"
+            stroke-width="0.05"
+            stroke-dasharray="0.1 0.1"
+          />
+        </svg>
+      </div>
+
+      <!-- Right Pane: Dashboard -->
+      <div class="dashboard-pane">
+        <header>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 20px;
+            "
+          >
+            <h1 style="margin: 0">Squares in Squares</h1>
+            <div style="display: flex; gap: 10px">
+              <button
+                id="btn-help"
+                class="icon-btn"
+                title="Help / Instructions"
+              >
+                ?
+              </button>
+              <button id="btn-about" class="icon-btn" title="About">i</button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label
+              >Name: <input type="text" id="ui-name" value="puzzle-5"
+            /></label>
+            <label
+              >N: <input type="number" id="ui-n" min="1" max="1000" value="5"
+            /></label>
+          </div>
+
+          <div class="metrics-panel">
+            <div class="metric">
+              <span>Status</span>
+              <strong id="ui-status" class="valid">Valid</strong>
+            </div>
+            <div class="metric">
+              <span>L (Bounds)</span>
+              <strong id="ui-bounds">0.00000000</strong>
+            </div>
+            <div class="metric">
+              <span>Kaggle Score</span>
+              <strong id="ui-score">0.00000000</strong>
+            </div>
+          </div>
+
+          <div class="controls">
+            <button id="btn-trivial">Trivial</button>
+            <button id="btn-random">Random</button>
+            <button id="btn-proven" disabled>Proven</button>
+            <button id="btn-export">Export JSON</button>
+
+            <label class="custom-file-upload">
+              <input type="file" id="file-import" accept=".json" />
+              Import JSON
+            </label>
+
+            <select id="ui-loaded-puzzles" style="display: none">
+              <option value="">-- Select Puzzle --</option>
+            </select>
+          </div>
+        </header>
+
+        <div class="table-container">
+          <table id="squares-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>X</th>
+                <th>Y</th>
+                <th>Angle (rad)</th>
+                <th>Angle (deg)</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <!-- Rows dynamically injected via UI module -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="modal-help" class="modal">
+      <div class="modal-content">
+        <span class="close-btn" id="close-help">&times;</span>
+        <h2>How to Play</h2>
+        <p>Welcome to the <strong>Squares in Squares</strong> solver engine.</p>
+        <p>
+          <strong>The Goal:</strong> Pack <em>N</em> unit squares (side length =
+          1) into the smallest possible larger square container without
+          overlapping. Most optimal configurations are still unknown to
+          mathematics! (<a href="https://squaremath.org" target="_blank"
+            >Read more at squaremath.org</a
+          >)
+        </p>
+        <hr />
+        <h3>Controls</h3>
+        <ul>
+          <li>
+            <strong>Select:</strong> Click a square on the grid, or click its
+            row in the table.
+          </li>
+          <li>
+            <strong>Move (Mouse):</strong> Click and drag a selected square
+            across the grid.
+          </li>
+          <li>
+            <strong>Move (Keyboard):</strong> Use <code>W</code>,
+            <code>A</code>, <code>S</code>, <code>D</code> or the
+            <code>Arrow Keys</code> to nudge the selected square up, left, down,
+            or right.
+          </li>
+          <li>
+            <strong>Rotate (Keyboard):</strong> Use <code>Q</code> to rotate
+            counter-clockwise, and <code>E</code> to rotate clockwise.
+          </li>
+          <li>
+            <strong>Micro-Adjustments:</strong> Hold down the
+            <code>Shift</code> key while pressing any keyboard control to make
+            10x smaller, precise adjustments.
+          </li>
+          <li>
+            <strong>Direct Input:</strong> You can type exact float coordinates
+            directly into the table cells.
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="modal-about" class="modal">
+      <div class="modal-content">
+        <span class="close-btn" id="close-about">&times;</span>
+        <h2>About this Engine</h2>
+        <p>
+          This interactive mathematical solver was designed to tackle the Kaggle
+          Squares in Squares packing challenge.
+        </p>
+
+        <div
+          style="
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+          "
+        >
+          <h3 style="margin-top: 0">Author Information</h3>
+          <p style="margin: 5px 0"><strong>Name:</strong> Rafael Cunha</p>
+          <p style="margin: 5px 0">
+            <strong>Email:</strong>
+            <a href="mailto:rnascunha@gmail.com">rnascunha@gmail.com</a>
+          </p>
+          <p style="margin: 5px 0">
+            <strong>Project GitHub:</strong>
+            <a
+              href="https://github.com/rnascunha/square-in-game/"
+              target="_blank"
+              >github.com/rnascunha/square-in-game/</a
+            >
+          </p>
+        </div>
+
+        <p>
+          <strong>Feedback wanted!</strong> If you discover any bugs, usability
+          issues, or have feature requests, please submit an issue on the GitHub
+          repository linked above.
+        </p>
+      </div>
+    </div>
+
+    <!-- Load the bundled script -->
+    <script src="bundle.js"></script>
+  </body>
+</html>

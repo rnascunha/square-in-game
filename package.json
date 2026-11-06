@@ -1,0 +1,35 @@
+{
+  "name": "square-in-game",
+  "version": "0.0.1",
+  "description": "Square-in-Square puzzle game",
+  "homepage": "https://github.com/rnascunha/square-in-game#readme",
+  "bugs": {
+    "url": "https://github.com/rnascunha/square-in-game/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rnascunha/square-in-game.git"
+  },
+  "license": "ISC",
+  "author": {
+    "name": "Rafael Cunha",
+    "email": "rnascunha@gmail.com",
+    "url": "https://github.com/rnascunha/"
+  },
+  "main": "index.js",
+  "scripts": {
+    "clean": "rm -rf dist build",
+    "build:ts": "tsc",
+    "build:bundle": "rollup -c",
+    "build:assets": "mkdir -p build/data && mkdir -p build/images && cp public/index.html build/ && cp public/styles.css build/ && cp public/images/icon.jpeg build/images && cp data/proven.json build/data/",
+    "build": "npm run clean && npm run build:ts && npm run build:bundle && npm run build:assets",
+    "serve": "serve build -p 3000",
+    "dev": "npm run build && npm run serve"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "rollup": "^4.68.0",
+    "serve": "^14.2.7",
+    "typescript": "^7.0.2"
+  }
+}
