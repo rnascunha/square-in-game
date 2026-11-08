@@ -26,4 +26,8 @@ export interface AppState {
     computedBoundingBox: number;
     computedBoundingBoxRect: { minX: number; minY: number; L: number };
     puzzleName: string;
+    showNumbers: boolean;
+    past: Square[][];
+    future: Square[][];
+    warningMessage: string | null;
 }

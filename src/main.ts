@@ -3,6 +3,7 @@ import { renderDashboard, renderTable, renderSVG } from './ui';
 import { fetchProvenDatabase, exportToJSON, parseImportedJSON } from './io';
 import { CONFIG } from './config';
 import { PuzzlePacking } from './types';
+import { saveGameToDB, loadGameFromDB, deleteGameFromDB, clearAllGamesDB, getAllGameKeys } from './db';
 
 let provenDatabase: Record<number, PuzzlePacking> = {};
 let importedPuzzles: PuzzlePacking[] = [];
@@ -11,6 +12,11 @@ let importedPuzzles: PuzzlePacking[] = [];
 let isDragging = false;
 let startMousePt = { x: 0, y: 0 };
 let startSqPt = { x: 0, y: 0 };
+let startL = 0;
+let autosaveTimeout: any;
+
+let numberBuffer = "";
+let numberTimeout: any = null;
 
 function getSVGPoint(e: MouseEvent) {
     const svg = document.getElementById('canvas') as any as SVGSVGElement;
@@ -20,19 +26,45 @@ function getSVGPoint(e: MouseEvent) {
     return pt.matrixTransform(svg.getScreenCTM()!.inverse());
 }
 
+async function refreshDBDropdown() {
+    const keys = await getAllGameKeys();
+    const select = document.getElementById('db-select') as HTMLSelectElement;
+    select.innerHTML = '<option value="">-- Select Game --</option>';
+    keys.forEach(k => {
+        if (k !== '_autosave_') {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = k;
+            select.appendChild(opt);
+        }
+    });
+}
+
 async function init() {
     provenDatabase = await fetchProvenDatabase();
+    
+    const saved = await loadGameFromDB('_autosave_');
+    if (saved) {
+        store.loadFullState(saved);
+    } else {
+        store.setN(5); 
+    }
+    
     updateProvenButtonState(store.state.n);
+    await refreshDBDropdown();
 
-    // Initial render
     store.subscribe((state) => {
         renderDashboard(state);
-        renderTable(state, (id, field, val) => store.updateSquare(id, { [field]: val }));
+        renderTable(state, (id, field, val) => store.updateSquare(id, { [field]: val }, false));
         renderSVG(state);
+        
+        clearTimeout(autosaveTimeout);
+        autosaveTimeout = setTimeout(() => {
+            saveGameToDB('_autosave_', state);
+        }, 500);
     });
 
-    // Fire initial state
-    store.setN(5); 
+    store.selectSquare(store.state.selectedSquareId);
     setupEventListeners();
 }
 
@@ -65,7 +97,6 @@ function loadPuzzleFromIndex(idx: number) {
 }
 
 function setupEventListeners() {
-    // Top bar inputs
     document.getElementById('ui-n')!.addEventListener('change', (e) => {
         const val = parseInt((e.target as HTMLInputElement).value);
         if (!isNaN(val) && val > 0) {
@@ -78,7 +109,6 @@ function setupEventListeners() {
         store.state.puzzleName = (e.target as HTMLInputElement).value;
     });
 
-    // Buttons
     document.getElementById('btn-trivial')!.addEventListener('click', () => {
         store.setSquares(store.generateTrivialPacking(store.state.n));
     });
@@ -102,8 +132,47 @@ function setupEventListeners() {
     document.getElementById('btn-export')!.addEventListener('click', () => {
         exportToJSON(store.state.n, store.state.squares, store.state.puzzleName, store.state.computedBoundingBox);
     });
+    
+    document.getElementById('btn-db-save')!.addEventListener('click', async () => {
+        const name = store.state.puzzleName.trim();
+        if (!name) { alert("Please provide a name."); return; }
+        await saveGameToDB(name, store.state);
+        await refreshDBDropdown();
+        alert(`Saved successfully as '${name}'`);
+    });
 
-    // Import Event & Dropdown
+    document.getElementById('btn-db-load')!.addEventListener('click', async () => {
+        const select = document.getElementById('db-select') as HTMLSelectElement;
+        const name = select.value;
+        if (!name) return;
+        const state = await loadGameFromDB(name);
+        if (state) {
+            store.loadFullState(state);
+            updateProvenButtonState(state.n);
+        }
+    });
+
+    document.getElementById('btn-db-delete')!.addEventListener('click', async () => {
+        const select = document.getElementById('db-select') as HTMLSelectElement;
+        const name = select.value;
+        if (!name) return;
+        if (confirm(`Are you sure you want to delete '${name}'?`)) {
+            await deleteGameFromDB(name);
+            await refreshDBDropdown();
+        }
+    });
+
+    document.getElementById('btn-db-clear')!.addEventListener('click', async () => {
+        if (confirm(`Are you sure you want to clear all saved games? This cannot be undone.`)) {
+            await clearAllGamesDB();
+            await refreshDBDropdown();
+        }
+    });
+    
+    document.getElementById('btn-toggle-numbers')!.addEventListener('click', () => store.toggleNumbers());
+    document.getElementById('btn-undo')!.addEventListener('click', () => store.undo());
+    document.getElementById('btn-redo')!.addEventListener('click', () => store.redo());
+
     document.getElementById('file-import')!.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {
@@ -114,7 +183,6 @@ function setupEventListeners() {
                     if (parsed.length > 0) {
                         importedPuzzles = parsed;
                         const selectEl = document.getElementById('ui-loaded-puzzles') as HTMLSelectElement;
-                        
                         selectEl.innerHTML = '<option value="">-- Select Puzzle --</option>';
                         parsed.forEach((p, idx) => {
                             const opt = document.createElement('option');
@@ -122,7 +190,6 @@ function setupEventListeners() {
                             opt.textContent = `n=${p.n} (${p.rule_category || 'Imported'})`;
                             selectEl.appendChild(opt);
                         });
-                        
                         selectEl.style.display = 'inline-block';
                         selectEl.value = "0";
                         loadPuzzleFromIndex(0); 
@@ -142,71 +209,106 @@ function setupEventListeners() {
         }
     });
 
-    // Modal Listeners
-    const helpModal = document.getElementById('modal-help')!;
-    const aboutModal = document.getElementById('modal-about')!;
+    const helpModal = document.getElementById('modal-help');
+    const infoModal = document.getElementById('modal-info');
     
-    document.getElementById('btn-help')!.addEventListener('click', () => {
-        helpModal.classList.add('show');
-    });
+    if (document.getElementById('btn-help') && helpModal) {
+        document.getElementById('btn-help')!.addEventListener('click', () => { helpModal.classList.add('show'); });
+        document.getElementById('close-help')!.addEventListener('click', () => { helpModal.classList.remove('show'); });
+    }
     
-    document.getElementById('btn-about')!.addEventListener('click', () => {
-        aboutModal.classList.add('show');
-    });
+    if (document.getElementById('btn-info') && infoModal) {
+        document.getElementById('btn-info')!.addEventListener('click', () => { infoModal.classList.add('show'); });
+        document.getElementById('close-info')!.addEventListener('click', () => { infoModal.classList.remove('show'); });
+    }
     
-    document.getElementById('close-help')!.addEventListener('click', () => {
-        helpModal.classList.remove('show');
-    });
-    
-    document.getElementById('close-about')!.addEventListener('click', () => {
-        aboutModal.classList.remove('show');
-    });
-    
-    // Close modal when clicking outside
     window.addEventListener('click', (e) => {
-        if (e.target === helpModal) helpModal.classList.remove('show');
-        if (e.target === aboutModal) aboutModal.classList.remove('show');
+        if (e.target === helpModal) helpModal?.classList.remove('show');
+        if (e.target === infoModal) infoModal?.classList.remove('show');
     });
 
     // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key.toLowerCase() === 'z') { e.preventDefault(); store.undo(); return; }
+            if (e.key.toLowerCase() === 'y') { e.preventDefault(); store.redo(); return; }
+        }
+
+        const activeEl = document.activeElement;
+        const isInput = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'SELECT';
+
+        if (e.key === 'Tab') {
+            if (isInput) return;
+            e.preventDefault();
+            
+            const total = store.state.n;
+            if (total === 0) return;
+            
+            let current = store.state.selectedSquareId;
+            if (current === null) {
+                current = e.shiftKey ? total : -1;
+            }
+            
+            let next = e.shiftKey ? current - 1 : current + 1;
+            if (next < 0) next = total - 1;
+            if (next >= total) next = 0;
+            
+            store.selectSquare(next);
+            return;
+        }
+
+        // Feature 1: Number typing to select
+        if (!isInput && e.key >= '0' && e.key <= '9') {
+            numberBuffer += e.key;
+            clearTimeout(numberTimeout);
+            numberTimeout = setTimeout(() => { numberBuffer = ""; }, 800);
+            
+            const targetId = parseInt(numberBuffer);
+            if (!isNaN(targetId) && targetId < store.state.n) {
+                store.selectSquare(targetId);
+            }
+            return;
+        }
+
         const id = store.state.selectedSquareId;
         if (id === null) return;
-        if ((e.target as HTMLElement).tagName === 'INPUT') return;
+        if (isInput) return;
 
         const sq = store.state.squares.find(s => s.square_id === id);
         if (!sq) return;
 
         const transStep = e.shiftKey ? CONFIG.MATH.TRANSLATE_STEP_SMALL : CONFIG.MATH.TRANSLATE_STEP;
         const rotStep = e.shiftKey ? CONFIG.MATH.ROTATE_STEP_SMALL : CONFIG.MATH.ROTATE_STEP;
+        const constrain = e.ctrlKey || e.metaKey;
 
-        let handled = true;
-        switch (e.key.toLowerCase()) {
-            case 'w': case 'arrowup':
-                store.updateSquare(id, { y: sq.y + transStep });
-                break;
-            case 's': case 'arrowdown':
-                store.updateSquare(id, { y: sq.y - transStep });
-                break;
-            case 'a': case 'arrowleft':
-                store.updateSquare(id, { x: sq.x - transStep });
-                break;
-            case 'd': case 'arrowright':
-                store.updateSquare(id, { x: sq.x + transStep });
-                break;
-            case 'q':
-                store.updateSquare(id, { angle: sq.angle + rotStep });
-                break;
-            case 'e':
-                store.updateSquare(id, { angle: sq.angle - rotStep });
-                break;
-            default:
-                handled = false;
+        const moveKeys = ['w','a','s','d','q','e','arrowup','arrowdown','arrowleft','arrowright'];
+        if (moveKeys.includes(e.key.toLowerCase())) {
+            if (!e.repeat) store.commitHistory();
+
+            switch (e.key.toLowerCase()) {
+                case 'w': case 'arrowup':
+                    store.updateSquare(id, { y: sq.y + transStep }, constrain);
+                    break;
+                case 's': case 'arrowdown':
+                    store.updateSquare(id, { y: sq.y - transStep }, constrain);
+                    break;
+                case 'a': case 'arrowleft':
+                    store.updateSquare(id, { x: sq.x - transStep }, constrain);
+                    break;
+                case 'd': case 'arrowright':
+                    store.updateSquare(id, { x: sq.x + transStep }, constrain);
+                    break;
+                case 'q':
+                    store.updateSquare(id, { angle: sq.angle + rotStep }, constrain);
+                    break;
+                case 'e':
+                    store.updateSquare(id, { angle: sq.angle - rotStep }, constrain);
+                    break;
+            }
+            e.preventDefault();
         }
-        if (handled) e.preventDefault();
     });
 
-    // Custom Event Listeners
     window.addEventListener('square-selected', ((e: CustomEvent) => {
         store.selectSquare(e.detail.id);
     }) as EventListener);
@@ -215,13 +317,14 @@ function setupEventListeners() {
         store.selectSquare(e.detail.id);
         const sq = store.state.squares.find(s => s.square_id === e.detail.id);
         if (sq) {
+            store.commitHistory(); 
             isDragging = true;
             startMousePt = getSVGPoint(e.detail.event);
             startSqPt = { x: sq.x, y: sq.y };
+            startL = store.state.computedBoundingBox;
         }
     }) as EventListener);
 
-    // Global drag handling
     window.addEventListener('mousemove', (e) => {
         if (!isDragging || store.state.selectedSquareId === null) return;
         const id = store.state.selectedSquareId;
@@ -229,11 +332,12 @@ function setupEventListeners() {
         const pt = getSVGPoint(e);
         const dx = pt.x - startMousePt.x;
         const dy = pt.y - startMousePt.y; 
+        const constrain = e.ctrlKey || e.metaKey;
         
         store.updateSquare(id, {
             x: startSqPt.x + dx,
             y: startSqPt.y - dy 
-        });
+        }, constrain, startL);
     });
 
     window.addEventListener('mouseup', () => {
